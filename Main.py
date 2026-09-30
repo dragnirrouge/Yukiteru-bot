@@ -1,70 +1,59 @@
-import asyncio, os, logging, sys, threading
+import os, asyncio, threading
 from flask import Flask
 from aiogram import Bot, Dispatcher, types
-from aiogram.filters import CommandStart, Command
-from aiogram.client.default import DefaultBotProperties
-from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.filters import Command
 import aiohttp
 
-# --- MINI SERVEUR WEB POUR RENDER GRATUIT ---
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+MONEROO_SECRET = os.getenv("MONEROO_SECRET_KEY")
+
+bot = Bot(token=BOT_TOKEN)
+dp = Dispatcher()
 app = Flask(__name__)
+
 @app.route('/')
 def home():
-    return "Yukiteru Bot is Running - Live!"
+    return "YUKITERU EN LIGNE"
 
-def run_web():
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host='0.0.0.0', port=port)
-
-threading.Thread(target=run_web, daemon=True).start()
-# --- FIN SERVEUR WEB ---
-
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-MONEROO_KEY = os.getenv("MONEROO_SECRET_KEY")
-MONEROO_API = "https://api.moneroo.io/checkout/v1/initialize"
-
-logging.basicConfig(level=logging.INFO)
-
-if not BOT_TOKEN or not MONEROO_KEY:
-    sys.exit("Manque BOT_TOKEN ou MONEROO_SECRET_KEY")
-
-bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
-dp = Dispatcher(storage=MemoryStorage())
-
-@dp.message(CommandStart())
-async def start(message: types.Message):
+@dp.message(Command("start"))
+async def start_cmd(message: types.Message):
     await message.answer(f"👑 Salut {message.from_user.first_name}!\n\nYUKITERU EN LIGNE\n\nTape /encaisser 5000 pour lien MTN/Airtel XAF")
 
 @dp.message(Command("encaisser"))
-async def encaisser(message: types.Message):
+async def encaisser_cmd(message: types.Message):
     try:
-        args = message.text.split()
-        if len(args) < 2 or not args[1].isdigit():
+        parts = message.text.split()
+        if len(parts) < 2:
             await message.answer("Utilise: /encaisser 5000")
             return
-        montant = int(args[1])
-        payload = {
-            "amount": montant,
-            "currency": "XAF",
-            "description": f"Paiement {montant} XAF",
-            "customer": {"email": f"{message.from_user.id}@bot.cg", "name": message.from_user.first_name},
-            "success_url": "https://t.me/",
-            "failed_url": "https://t.me/"
-        }
-        headers = {"Authorization": f"Bearer {MONEROO_KEY}", "Content-Type": "application/json"}
+        montant = int(parts[1])
+
         async with aiohttp.ClientSession() as session:
-            async with session.post(MONEROO_API, json=payload, headers=headers) as resp:
+            headers = {"Authorization": f"Bearer {MONEROO_SECRET}", "Content-Type": "application/json"}
+            payload = {
+                "amount": montant,
+                "currency": "XAF",
+                "description": f"Paiement {montant} XAF",
+                "return_url": "https://t.me/YukiAnimeBot"
+            }
+            async with session.post("https://api.moneroo.io/v1/payments", json=payload, headers=headers) as resp:
                 data = await resp.json()
-                url = data.get("checkout_url") or data.get("data",{}).get("checkout_url")
-                if url:
-                    kb = types.InlineKeyboardMarkup(inline_keyboard=[[types.InlineKeyboardButton(text="💸 Payer maintenant", url=url)]])
-                    await message.answer(f"✅ Lien {montant} XAF:\n{url}", reply_markup=kb)
-                else:
-                    await message.answer(f"❌ Erreur: {data}")
+                print(f"MONEROO RESPONSE: {data}")
+                if resp.status!= 200:
+                    await message.answer(f"Erreur Moneroo: {data}")
+                    return
+                link = data.get("checkout_url") or data.get("payment_url") or data.get("url") or str(data)
+                await message.answer(f"💸 Lien de paiement {montant} XAF:\n{link}")
+
     except Exception as e:
-        await message.answer("Erreur, reessaie")
+        print(f"ERREUR: {e}")
+        await message.answer(f"Erreur debug: {e}")
+
+def run_flask():
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
 
 async def main():
+    threading.Thread(target=run_flask, daemon=True).start()
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
