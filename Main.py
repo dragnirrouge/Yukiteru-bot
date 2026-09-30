@@ -17,7 +17,7 @@ def home():
 
 @dp.message(Command("start"))
 async def start_cmd(message: types.Message):
-    await message.answer(f"👑 Salut {message.from_user.first_name}!\n\nYUKITERU EN LIGNE\n\nTape /encaisser 5000 pour lien MTN/Airtel XAF")
+    await message.answer(f"👑 Salut {message.from_user.first_name}!\n\nYUKITERU EN LIGNE ✅\n\nTape /encaisser 5000")
 
 @dp.message(Command("encaisser"))
 async def encaisser_cmd(message: types.Message):
@@ -28,22 +28,34 @@ async def encaisser_cmd(message: types.Message):
             return
         montant = int(parts[1])
 
-        async with aiohttp.ClientSession() as session:
-            headers = {"Authorization": f"Bearer {MONEROO_SECRET}", "Content-Type": "application/json"}
-            payload = {
-                "amount": montant,
-                "currency": "XAF",
-                "description": f"Paiement {montant} XAF",
-                "return_url": "https://t.me/YukiAnimeBot"
+        url = "https://api.moneroo.io/v1/payments/initialize"
+        headers = {
+            "Authorization": f"Bearer {MONEROO_SECRET}",
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+        }
+        payload = {
+            "amount": montant,
+            "currency": "XAF",
+            "description": f"Paiement {montant} XAF",
+            "return_url": "https://t.me/YukiAnimeBot",
+            "customer": {
+                "email": f"{message.from_user.id}@yukiteru.bot",
+                "first_name": message.from_user.first_name or "Client",
+                "last_name": "Yukiteru"
             }
-            async with session.post("https://api.moneroo.io/v1/payments", json=payload, headers=headers) as resp:
+        }
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, json=payload, headers=headers) as resp:
                 data = await resp.json()
-                print(f"MONEROO RESPONSE: {data}")
-                if resp.status!= 200:
-                    await message.answer(f"Erreur Moneroo: {data}")
+                print(f"MONEROO {resp.status}: {data}")
+                if resp.status not in [200, 201]:
+                    await message.answer(f"❌ Erreur Moneroo {resp.status}:\n{data}")
                     return
-                link = data.get("checkout_url") or data.get("payment_url") or data.get("url") or str(data)
-                await message.answer(f"💸 Lien de paiement {montant} XAF:\n{link}")
+                d = data.get("data", data)
+                link = d.get("checkout_url") or d.get("checkoutUrl")
+                await message.answer(f"💸 Lien {montant} XAF:\n{link}\nID: {d.get('id')}")
 
     except Exception as e:
         print(f"ERREUR: {e}")
