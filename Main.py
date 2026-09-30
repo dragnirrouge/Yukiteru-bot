@@ -1,9 +1,23 @@
-import asyncio, os, logging, sys
+import asyncio, os, logging, sys, threading
+from flask import Flask
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import CommandStart, Command
 from aiogram.client.default import DefaultBotProperties
 from aiogram.fsm.storage.memory import MemoryStorage
 import aiohttp
+
+# --- MINI SERVEUR WEB POUR RENDER GRATUIT ---
+app = Flask(__name__)
+@app.route('/')
+def home():
+    return "Yukiteru Bot is Running - Live!"
+
+def run_web():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
+
+threading.Thread(target=run_web, daemon=True).start()
+# --- FIN SERVEUR WEB ---
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 MONEROO_KEY = os.getenv("MONEROO_SECRET_KEY")
